@@ -2,8 +2,7 @@ name: Deploy to EC2
 
 on:
   push:
-    branches:
-      - master   # change if your branch is main
+    branches: ["master"]   # change to ["main"] if needed
 
 jobs:
   deploy:
@@ -18,24 +17,19 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      - name: Trust EC2 host key
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Rsync code to EC2
+      - name: Rsync code to EC2 (keep secrets & uploads safe)
         run: |
           rsync -az --delete \
             --exclude ".git/" \
             --exclude ".github/" \
             --exclude "wp-config.php" \
             --exclude "wp-content/uploads/" \
-            -e "ssh" \
+            -e "ssh -o StrictHostKeyChecking=no" \
             ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html
 
       - name: Fix permissions & reload Apache
         run: |
-          ssh ubuntu@${{ secrets.EC2_HOST }} <<'EOF'
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} <<'EOF'
           set -e
           sudo chown -R ubuntu:www-data /var/www/html
           sudo find /var/www/html -type d -exec chmod 775 {} \;
