@@ -2,7 +2,8 @@ name: Deploy to EC2
 
 on:
   push:
-    branches: ["master"]   # change to "main" to master if your branch is master
+    branches:
+      - master   # change if your branch is main
 
 jobs:
   deploy:
@@ -22,7 +23,7 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Rsync code to EC2 (keep secrets & uploads safe)
+      - name: Rsync code to EC2
         run: |
           rsync -az --delete \
             --exclude ".git/" \
@@ -39,7 +40,6 @@ jobs:
           sudo chown -R ubuntu:www-data /var/www/html
           sudo find /var/www/html -type d -exec chmod 775 {} \;
           sudo find /var/www/html -type f -exec chmod 664 {} \;
-          # keep uploads writable by WordPress
           sudo chown -R www-data:www-data /var/www/html/wp-content/uploads 2>/dev/null || true
           sudo systemctl reload apache2 || true
           EOF
