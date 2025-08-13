@@ -1,0 +1,45 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: ["main"]   # change to "master" if your branch is master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent with deploy key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Trust EC2 host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Rsync code to EC2 (keep secrets & uploads safe)
+        run: |
+          rsync -az --delete \
+            --exclude ".git/" \
+            --exclude ".github/" \
+            --exclude "wp-config.php" \
+            --exclude "wp-content/uploads/" \
+            -e "ssh" \
+            ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html
+
+      - name: Fix permissions & reload Apache
+        run: |
+          ssh ubuntu@${{ secrets.EC2_HOST }} <<'EOF'
+          set -e
+          sudo chown -R ubuntu:www-data /var/www/html
+          sudo find /var/www/html -type d -exec chmod 775 {} \;
+          sudo find /var/www/html -type f -exec chmod 664 {} \;
+          # keep uploads writable by WordPress
+          sudo chown -R www-data:www-data /var/www/html/wp-content/uploads 2>/dev/null || true
+          sudo systemctl reload apache2 || true
+          EOF
