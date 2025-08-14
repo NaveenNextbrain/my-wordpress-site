@@ -1,96 +1,8 @@
-# name: Deploy to EC2
-
-# on:
-#   push:
-#     branches: ["master"]   # change to ["main"] if needed 
-
-# jobs:
-#   deploy:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-
-#       - name: Start SSH agent with deploy key
-#         uses: webfactory/ssh-agent@v0.9.0
-#         with:
-#           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
-
-#       - name: Rsync code to EC2 (keep secrets & uploads safe)
-#         run: |
-#           rsync -az --delete \
-#             --exclude ".git/" \
-#             --exclude ".github/" \
-#             --exclude "wp-config.php" \
-#             --exclude "wp-content/uploads/" \
-#             -e "ssh -o StrictHostKeyChecking=no" \
-#             ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html
-
-#       - name: Fix permissions & reload Apache
-#         run: |
-#           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} <<'EOF'
-#           set -e
-#           sudo chown -R ubuntu:www-data /var/www/html
-#           sudo find /var/www/html -type d -exec chmod 775 {} \;
-#           sudo find /var/www/html -type f -exec chmod 664 {} \;
-#           sudo chown -R www-data:www-data /var/www/html/wp-content/uploads 2>/dev/null || true
-#           sudo systemctl reload apache2 || true
-#           EOF
-
-
-# name: Deploy to EC2
-
-# on:
-#   push:
-#     branches: ["master"]   # change to ["main"] if needed you can add
-
-# jobs:
-#   deploy:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-
-#       - name: Debug – Show key length
-#         run: |
-#           echo "${{ secrets.EC2_SSH_KEY }}" | wc -c
-#           echo "If the length is less than 1600 or greater than 1700 chars, key might be corrupted."
-
-#       - name: Start SSH agent with deploy key
-#         uses: webfactory/ssh-agent@v0.9.0
-#         with:
-#           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
-
-#       - name: Rsync code to EC2 (keep secrets & uploads safe)
-#         run: |
-#           rsync -az --delete \
-#             --exclude ".git/" \
-#             --exclude ".github/" \
-#             --exclude "wp-config.php" \
-#             --exclude "wp-content/uploads/" \
-#             -e "ssh -o StrictHostKeyChecking=no" \
-#             ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html
-
-#       - name: Fix permissions & reload Apache
-#         run: |
-#           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} <<'EOF'
-#           set -e
-#           sudo chown -R ubuntu:www-data /var/www/html
-#           sudo find /var/www/html -type d -exec chmod 775 {} \;
-#           sudo find /var/www/html -type f -exec chmod 664 {} \;
-#           sudo chown -R www-data:www-data /var/www/html/wp-content/uploads 2>/dev/null || true
-#           sudo systemctl reload apache2 || true
-#           EOF
-
-
-
 name: Deploy to EC2
 
 on:
   push:
-    branches: ["master"]   # change to ["main"] if needed
+    branches: ["master"]
 
 jobs:
   deploy:
@@ -100,62 +12,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Debug – Show key format and length
-        run: |
-          echo "Key length: $(echo '${{ secrets.EC2_SSH_KEY }}' | wc -c)"
-          echo "First line: $(echo '${{ secrets.EC2_SSH_KEY }}' | head -n1)"
-          echo "Last line: $(echo '${{ secrets.EC2_SSH_KEY }}' | tail -n1)"
-          echo "Number of lines: $(echo '${{ secrets.EC2_SSH_KEY }}' | wc -l)"
-
-      - name: Setup SSH directory
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
-      - name: Start SSH agent with deploy key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
-
-      - name: Add EC2 host to known_hosts
-        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Test SSH connection
+      - name: Deploy to EC2
         run: |
-          ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "echo 'SSH connection successful'; whoami; pwd"
-
-      - name: Rsync code to EC2 (keep secrets & uploads safe)
-        run: |
+          # Test connection first
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "echo 'Connected successfully'"
+          
+          # Sync files
           rsync -avz --delete \
-            --exclude ".git/" \
-            --exclude ".github/" \
-            --exclude "wp-config.php" \
-            --exclude "wp-content/uploads/" \
-            --exclude "node_modules/" \
-            --exclude ".env" \
+            --exclude=".git/" \
+            --exclude=".github/" \
+            --exclude="wp-config.php" \
+            --exclude="wp-content/uploads/" \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/
-
-      - name: Fix permissions & reload Apache
-        run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
-          set -e
-          echo "Setting permissions..."
-          sudo chown -R ubuntu:www-data /var/www/html
-          sudo find /var/www/html -type d -exec chmod 775 {} \;
-          sudo find /var/www/html -type f -exec chmod 664 {} \;
           
-          # Handle uploads directory if it exists
-          if [ -d "/var/www/html/wp-content/uploads" ]; then
-            sudo chown -R www-data:www-data /var/www/html/wp-content/uploads
-          fi
-          
-          echo "Reloading Apache..."
-          sudo systemctl reload apache2
-          echo "Deployment completed successfully!"
-          EOF
-
-      - name: Post deployment check
-        run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "curl -s -o /dev/null -w '%{http_code}' http://localhost || echo 'Website check failed'"
+          # Fix permissions and restart Apache
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
+            sudo chown -R ubuntu:www-data /var/www/html &&
+            sudo find /var/www/html -type d -exec chmod 775 {} \; &&
+            sudo find /var/www/html -type f -exec chmod 664 {} \; &&
+            sudo systemctl reload apache2 &&
+            echo 'Deployment completed successfully!'
+          "
