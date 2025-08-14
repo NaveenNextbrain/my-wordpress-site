@@ -1,3 +1,48 @@
+# name: Deploy to EC2
+
+# on:
+#   push:
+#     branches: ["master"]
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Setup SSH
+#         run: |
+#           mkdir -p ~/.ssh
+#           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+#           chmod 600 ~/.ssh/id_rsa
+#           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+#       - name: Deploy to EC2
+#         run: |
+#           # Test connection first
+#           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "echo 'Connected successfully'"
+          
+#           # Sync files
+#           rsync -avz --delete \
+#             --exclude=".git/" \
+#             --exclude=".github/" \
+#             --exclude="wp-config.php" \
+#             --exclude="wp-content/uploads/" \
+#             -e "ssh -o StrictHostKeyChecking=no" \
+#             ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/
+          
+#           # Fix permissions and restart Apache
+#           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
+#             sudo chown -R ubuntu:www-data /var/www/html &&
+#             sudo find /var/www/html -type d -exec chmod 775 {} \; &&
+#             sudo find /var/www/html -type f -exec chmod 664 {} \; &&
+#             sudo systemctl reload apache2 &&
+#             echo 'Deployment completed successfully!'
+#           "
+
+
 name: Deploy to EC2
 
 on:
@@ -7,37 +52,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Deploy to EC2
-        run: |
-          # Test connection first
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "echo 'Connected successfully'"
-          
-          # Sync files
-          rsync -avz --delete \
-            --exclude=".git/" \
-            --exclude=".github/" \
-            --exclude="wp-config.php" \
-            --exclude="wp-content/uploads/" \
-            -e "ssh -o StrictHostKeyChecking=no" \
-            ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/
-          
-          # Fix permissions and restart Apache
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
-            sudo chown -R ubuntu:www-data /var/www/html &&
-            sudo find /var/www/html -type d -exec chmod 775 {} \; &&
-            sudo find /var/www/html -type f -exec chmod 664 {} \; &&
-            sudo systemctl reload apache2 &&
-            echo 'Deployment completed successfully!'
-          "
+      - uses: actions/checkout@v4
+      
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /tmp
+            git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git temp_repo
+            rsync -av --exclude='wp-config.php' --exclude='wp-content/uploads/' temp_repo/ /var/www/html/
+            sudo chown -R ubuntu:www-data /var/www/html
+            sudo systemctl reload apache2
+            rm -rf temp_repo
