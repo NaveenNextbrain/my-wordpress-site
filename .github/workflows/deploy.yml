@@ -1,3 +1,65 @@
+# name: Deploy to EC2
+
+# on:
+#   push:
+#     branches: ["master"]
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Debug - Check secrets
+#         run: |
+#           echo "Host: ${{ secrets.EC2_HOST }}"
+#           echo "Key length: $(echo '${{ secrets.EC2_SSH_KEY }}' | wc -c)"
+#           echo "Key starts with: $(echo '${{ secrets.EC2_SSH_KEY }}' | head -c 50)"
+
+#       - name: Setup SSH key
+#         run: |
+#           mkdir -p ~/.ssh
+#           chmod 700 ~/.ssh
+          
+#           # Write the SSH key to a file
+#           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+#           chmod 600 ~/.ssh/deploy_key
+          
+#           # Add the host to known_hosts
+#           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+#           chmod 644 ~/.ssh/known_hosts
+          
+#           # Test if key is valid
+#           ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || echo "Key format error!"
+
+#       - name: Test SSH connection
+#         run: |
+#           ssh -vvv -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@${{ secrets.EC2_HOST }} "whoami"
+
+#       - name: Deploy files
+#         run: |
+#           # Sync the files
+#           rsync -avz --delete \
+#             --exclude=".git/" \
+#             --exclude=".github/" \
+#             --exclude="wp-config.php" \
+#             --exclude="wp-content/uploads/" \
+#             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+#             ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/
+
+#       - name: Set permissions and restart Apache
+#         run: |
+#           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+#           sudo chown -R ubuntu:www-data /var/www/html
+#           sudo find /var/www/html -type d -exec chmod 775 {} \;
+#           sudo find /var/www/html -type f -exec chmod 664 {} \;
+#           sudo systemctl reload apache2
+#           echo "Deployment completed!"
+#           EOF
+
+
 name: Deploy to EC2
 
 on:
@@ -16,42 +78,34 @@ jobs:
         run: |
           echo "Host: ${{ secrets.EC2_HOST }}"
           echo "Key length: $(echo '${{ secrets.EC2_SSH_KEY }}' | wc -c)"
-          echo "Key starts with: $(echo '${{ secrets.EC2_SSH_KEY }}' | head -c 50)"
 
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          
-          # Write the SSH key to a file
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf "%s\n" "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          
-          # Add the host to known_hosts
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
-          
-          # Test if key is valid
           ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || echo "Key format error!"
 
       - name: Test SSH connection
         run: |
-          ssh -vvv -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@${{ secrets.EC2_HOST }} "whoami"
+          ssh -vvv -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 "ubuntu@${{ secrets.EC2_HOST }}" "whoami"
 
       - name: Deploy files
         run: |
-          # Sync the files
           rsync -avz --delete \
             --exclude=".git/" \
             --exclude=".github/" \
             --exclude="wp-config.php" \
             --exclude="wp-content/uploads/" \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
-            ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/
+            ./ "ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/"
 
       - name: Set permissions and restart Apache
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "ubuntu@${{ secrets.EC2_HOST }}" << 'EOF'
           sudo chown -R ubuntu:www-data /var/www/html
           sudo find /var/www/html -type d -exec chmod 775 {} \;
           sudo find /var/www/html -type f -exec chmod 664 {} \;
