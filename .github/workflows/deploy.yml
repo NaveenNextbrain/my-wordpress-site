@@ -1,3 +1,44 @@
+# name: Deploy to EC2
+
+# on:
+#   push:
+#     branches: ["master"]   # change to ["main"] if needed 
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Start SSH agent with deploy key
+#         uses: webfactory/ssh-agent@v0.9.0
+#         with:
+#           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+#       - name: Rsync code to EC2 (keep secrets & uploads safe)
+#         run: |
+#           rsync -az --delete \
+#             --exclude ".git/" \
+#             --exclude ".github/" \
+#             --exclude "wp-config.php" \
+#             --exclude "wp-content/uploads/" \
+#             -e "ssh -o StrictHostKeyChecking=no" \
+#             ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html
+
+#       - name: Fix permissions & reload Apache
+#         run: |
+#           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} <<'EOF'
+#           set -e
+#           sudo chown -R ubuntu:www-data /var/www/html
+#           sudo find /var/www/html -type d -exec chmod 775 {} \;
+#           sudo find /var/www/html -type f -exec chmod 664 {} \;
+#           sudo chown -R www-data:www-data /var/www/html/wp-content/uploads 2>/dev/null || true
+#           sudo systemctl reload apache2 || true
+#           EOF
+
+
 name: Deploy to EC2
 
 on:
@@ -11,6 +52,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Debug – Show key length
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" | wc -c
+          echo "If the length is less than 1600 or greater than 1700 chars, key might be corrupted."
 
       - name: Start SSH agent with deploy key
         uses: webfactory/ssh-agent@v0.9.0
