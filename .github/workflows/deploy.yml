@@ -1,48 +1,3 @@
-# name: Deploy to EC2
-
-# on:
-#   push:
-#     branches: ["master"]
-
-# jobs:
-#   deploy:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-
-#       - name: Setup SSH
-#         run: |
-#           mkdir -p ~/.ssh
-#           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-#           chmod 600 ~/.ssh/id_rsa
-#           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-#       - name: Deploy to EC2
-#         run: |
-#           # Test connection first
-#           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "echo 'Connected successfully'"
-          
-#           # Sync files
-#           rsync -avz --delete \
-#             --exclude=".git/" \
-#             --exclude=".github/" \
-#             --exclude="wp-config.php" \
-#             --exclude="wp-content/uploads/" \
-#             -e "ssh -o StrictHostKeyChecking=no" \
-#             ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/
-          
-#           # Fix permissions and restart Apache
-#           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "
-#             sudo chown -R ubuntu:www-data /var/www/html &&
-#             sudo find /var/www/html -type d -exec chmod 775 {} \; &&
-#             sudo find /var/www/html -type f -exec chmod 664 {} \; &&
-#             sudo systemctl reload apache2 &&
-#             echo 'Deployment completed successfully!'
-#           "
-
-
 name: Deploy to EC2
 
 on:
@@ -52,20 +7,54 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /tmp
-            git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git temp_repo
-            rsync -av --exclude='wp-config.php' --exclude='wp-content/uploads/' temp_repo/ /var/www/html/
-            sudo chown -R ubuntu:www-data /var/www/html
-            sudo systemctl reload apache2
-            rm -rf temp_repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Debug - Check secrets
+        run: |
+          echo "Host: ${{ secrets.EC2_HOST }}"
+          echo "Key length: $(echo '${{ secrets.EC2_SSH_KEY }}' | wc -c)"
+          echo "Key starts with: $(echo '${{ secrets.EC2_SSH_KEY }}' | head -c 50)"
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          
+          # Write the SSH key to a file
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          
+          # Add the host to known_hosts
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          
+          # Test if key is valid
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || echo "Key format error!"
+
+      - name: Test SSH connection
+        run: |
+          ssh -vvv -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@${{ secrets.EC2_HOST }} "whoami"
+
+      - name: Deploy files
+        run: |
+          # Sync the files
+          rsync -avz --delete \
+            --exclude=".git/" \
+            --exclude=".github/" \
+            --exclude="wp-config.php" \
+            --exclude="wp-content/uploads/" \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            ./ ubuntu@${{ secrets.EC2_HOST }}:/var/www/html/
+
+      - name: Set permissions and restart Apache
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+          sudo chown -R ubuntu:www-data /var/www/html
+          sudo find /var/www/html -type d -exec chmod 775 {} \;
+          sudo find /var/www/html -type f -exec chmod 664 {} \;
+          sudo systemctl reload apache2
+          echo "Deployment completed!"
+          EOF
